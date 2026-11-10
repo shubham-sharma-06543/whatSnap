@@ -1455,6 +1455,13 @@ pub fn bind_input_handlers(
 		let _ = tx_new_contact_form.send(UiCommand::OpenNewContactForm);
 	});
 
+	let new_conv_dlg_for_community = parts.new_conv_dialog.dialog;
+	let tx_community = ui_tx.clone();
+	parts.new_conv_dialog.new_community_btn.on_click(move |_| {
+		new_conv_dlg_for_community.end_modal(0);
+		let _ = tx_community.send(UiCommand::NewCommunity);
+	});
+
 	let new_conv_dlg_for_meta_ai = parts.new_conv_dialog.dialog;
 	let tx_meta_ai = ui_tx.clone();
 	parts.new_conv_dialog.message_meta_ai_btn.on_click(move |_| {
@@ -1481,6 +1488,14 @@ pub fn bind_input_handlers(
 				event.skip(false);
 				return;
 			}
+			if code == Some(WXK_DOWN) && picker_results_list_from_search.get_count() > 0 {
+				picker_results_list_from_search.set_focus();
+				if picker_results_list_from_search.get_selection().is_none() {
+					picker_results_list_from_search.set_selection(0, true);
+				}
+				event.skip(false);
+				return;
+			}
 		}
 		event.skip(true);
 	});
@@ -1496,6 +1511,7 @@ pub fn bind_input_handlers(
 	let tx_picker_select_key = ui_tx.clone();
 	let picker_results_list_key = parts.new_conv_dialog.results_list;
 	let picker_dialog_esc = parts.new_conv_dialog.dialog;
+	let picker_search_field_focus = parts.new_conv_dialog.search_field;
 	// Plain Enter on a ListBox row never reaches on_key_down here - this
 	// dialog's IsDialogMessage handling takes it for the default button (only
 	// Alt+Enter got through) - which is what on_enter's key-up half is for.
@@ -1504,7 +1520,17 @@ pub fn bind_input_handlers(
 			let _ = tx_picker_select_key.send(UiCommand::SelectContactPickerResult(idx as usize));
 		}
 	});
-	picker_results_list_key.on_key_down(keys::escape_cancels(picker_dialog_esc));
+	picker_results_list_key.on_key_down(move |event| {
+		if let WindowEventData::Keyboard(ref key_event) = event {
+			let code = key_event.get_key_code();
+			if code == Some(WXK_UP) && picker_results_list_key.get_selection() == Some(0) {
+				picker_search_field_focus.set_focus();
+				event.skip(false);
+				return;
+			}
+		}
+		keys::escape_cancels(picker_dialog_esc)(event);
+	});
 
 	let tx_conv_data = ui_tx.clone();
 	parts.conversations_parts.conv_data_btn.on_click(move |_| {

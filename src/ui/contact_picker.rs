@@ -271,21 +271,82 @@ pub(crate) fn sync_attach_contact_labels(state: &Rc<RefCell<AppState>>) {
 
 pub(crate) fn apply_contact_picker_filter(query: &str, state: &Rc<RefCell<AppState>>, parts: &Rc<WindowParts>) {
 	let q = query.trim().to_lowercase();
+	let q_digits: String = query.chars().filter(|c| c.is_ascii_digit()).collect();
 	let mut s = state.borrow_mut();
 	let mut labels = Vec::new();
 	let mut jids = Vec::new();
+	let own_jid_str = crate::ui::owner_draw::own_jid();
+	let own_digits = own_jid_str.split('@').next().unwrap_or("");
+
+	if q_digits.len() >= 7 {
+		let resolved = whatsnap::phone::valid_digits(&q_digits)
+			.or_else(|| whatsnap::phone::with_own_country(own_digits, &q_digits))
+			.unwrap_or_else(|| q_digits.clone());
+		let candidate_jid = format!("{resolved}@s.whatsapp.net");
+		let is_already_saved = s.all_contacts.iter().any(|c| {
+			let c_phone_digits: String = c.phone.chars().filter(|ch| ch.is_ascii_digit()).collect();
+			let c_jid_digits: String =
+				c.jid.split('@').next().unwrap_or("").chars().filter(|ch| ch.is_ascii_digit()).collect();
+			(!c_phone_digits.is_empty() && c_phone_digits == resolved)
+				|| (!c_jid_digits.is_empty() && c_jid_digits == resolved)
+		});
+
+		if !is_already_saved {
+			let formatted = whatsnap::phone::format_international(&resolved).unwrap_or_else(|| format!("+{resolved}"));
+			let action_label = match s.contact_picker_mode {
+				crate::ContactPickerMode::OpenChat => format!("Chat with {formatted}"),
+				crate::ContactPickerMode::AddCallParticipant => format!("Add {formatted} to call"),
+				crate::ContactPickerMode::BlockContact => format!("Block {formatted}"),
+			};
+			labels.push(action_label);
+			jids.push(candidate_jid);
+		}
+	}
+
 	for contact in &s.all_contacts {
 		let label = contact_picker_label(contact);
-		if q.is_empty() || label.to_lowercase().contains(&q) {
+		let matches_name = q.is_empty() || label.to_lowercase().contains(&q);
+		let matches_phone = if !q_digits.is_empty() {
+			let c_phone_digits: String = contact.phone.chars().filter(|c| c.is_ascii_digit()).collect();
+			let c_jid_digits: String =
+				contact.jid.split('@').next().unwrap_or("").chars().filter(|c| c.is_ascii_digit()).collect();
+			c_phone_digits.contains(&q_digits) || c_jid_digits.contains(&q_digits)
+		} else {
+			false
+		};
+
+		if matches_name || matches_phone {
 			labels.push(label);
 			jids.push(contact.jid.clone());
 		}
 	}
+
 	parts.new_conv_dialog.results_list.clear();
 	for label in &labels {
 		parts.new_conv_dialog.results_list.append(label);
 	}
+	if !labels.is_empty() {
+		parts.new_conv_dialog.results_list.set_selection(0, true);
+	}
 	s.contact_picker_current_jids = jids;
+
+	let is_open_chat = s.contact_picker_mode == crate::ContactPickerMode::OpenChat;
+	if is_open_chat {
+		if q.is_empty() {
+			parts.new_conv_dialog.contacts_label.set_label(&format!("Contacts on WhatsApp ({})", labels.len()));
+		} else {
+			parts.new_conv_dialog.contacts_label.set_label(&format!("Search results ({})", labels.len()));
+		}
+	}
+
+	if !q.is_empty() {
+		let msg = match labels.len() {
+			0 => "No contacts found.".to_string(),
+			1 => format!("1 contact found: {}", labels[0]),
+			n => format!("{n} contacts found."),
+		};
+		crate::platform::announce::announce(parts.new_conv_dialog.announcer, &msg);
+	}
 }
 
 #[cfg(test)]

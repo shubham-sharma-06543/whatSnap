@@ -116,18 +116,26 @@ pub(crate) fn prepare_contact_picker(state: &Rc<RefCell<AppState>>, parts: &Rc<W
 	}
 	state.borrow_mut().contact_picker_mode = mode;
 	parts.new_conv_dialog.search_field.set_value("");
-	let heading = match mode {
-		ContactPickerMode::OpenChat => "Search name or number",
-		ContactPickerMode::AddCallParticipant => "Search a contact to add to the call, then press Enter",
-		ContactPickerMode::BlockContact => "Search a contact to block, then press Enter",
+	let (win_title, heading, list_heading) = match mode {
+		ContactPickerMode::OpenChat => ("New Chat", "Search name or number", "Contacts on WhatsApp"),
+		ContactPickerMode::AddCallParticipant => (
+			"Add to Call",
+			"Search a contact to add to the call, then press Enter",
+			"Select contact to add",
+		),
+		ContactPickerMode::BlockContact => {
+			("Block Contact", "Search a contact to block, then press Enter", "Select contact to block")
+		}
 	};
+	parts.new_conv_dialog.dialog.set_label(win_title);
 	parts.new_conv_dialog.search_label.set_label(heading);
+	parts.new_conv_dialog.contacts_label.set_label(list_heading);
 	let is_open_chat = mode == ContactPickerMode::OpenChat;
-	parts.new_conv_dialog.new_group_btn.show(is_open_chat);
-	parts.new_conv_dialog.new_contact_btn.show(is_open_chat);
+	parts.new_conv_dialog.action_panel.show(is_open_chat);
 	parts.new_conv_dialog.message_meta_ai_btn.show(is_open_chat && state.borrow().settings.meta_ai_enabled);
 	parts.new_conv_dialog.dialog.layout();
 	apply_contact_picker_filter("", state, parts);
+	parts.new_conv_dialog.search_field.set_focus();
 	let payload = serde_json::json!({ "action": "get_contacts" });
 	let _ = state.borrow().ws_tx.send(payload.to_string());
 	crate::ui::show_modal_again(&parts.new_conv_dialog.dialog);
